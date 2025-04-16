@@ -1,0 +1,99 @@
+  // Liked Songs endpoints
+  app.get("/api/me/liked-songs", async (req, res, next) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      
+      // Get or create the user's Liked Songs playlist
+      const likedSongsPlaylist = await storage.getUserLikedSongsPlaylist(req.user.id);
+      
+      // Get the songs in the playlist
+      const playlistWithSongs = await storage.getPlaylistWithSongs(likedSongsPlaylist.id);
+      
+      res.json(playlistWithSongs);
+    } catch (error) {
+      next(error);
+    }
+  });
+  
+  app.post("/api/me/liked-songs", async (req, res, next) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      
+      const songId = req.body.songId;
+      
+      if (!songId || isNaN(parseInt(songId))) {
+        return res.status(400).json({ message: "Invalid songId" });
+      }
+      
+      // Get or create the Liked Songs playlist
+      const likedSongsPlaylist = await storage.getUserLikedSongsPlaylist(req.user.id);
+      
+      // Check if song already exists in the playlist
+      const playlistWithSongs = await storage.getPlaylistWithSongs(likedSongsPlaylist.id);
+      const songExists = playlistWithSongs?.songs?.some(song => song.id === parseInt(songId)) || false;
+      
+      if (songExists) {
+        return res.status(409).json({ message: "Song already in Liked Songs" });
+      }
+      
+      // Add song to the Liked Songs playlist
+      await storage.addSongToPlaylist({
+        playlistId: likedSongsPlaylist.id,
+        songId: parseInt(songId)
+      });
+      
+      res.status(201).json({ message: "Song added to Liked Songs" });
+    } catch (error) {
+      next(error);
+    }
+  });
+  
+  app.delete("/api/me/liked-songs/:songId", async (req, res, next) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      
+      const songId = parseInt(req.params.songId);
+      
+      // Get the Liked Songs playlist
+      const likedSongsPlaylist = await storage.getUserLikedSongsPlaylist(req.user.id);
+      
+      // Remove song from the playlist
+      await storage.removeSongFromPlaylist(likedSongsPlaylist.id, songId);
+      
+      res.status(200).json({ message: "Song removed from Liked Songs" });
+    } catch (error) {
+      next(error);
+    }
+  });
+  
+  // Check if a song is in the user's Liked Songs
+  app.get("/api/me/liked-songs/:songId", async (req, res, next) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      
+      const songId = parseInt(req.params.songId);
+      
+      // Get the Liked Songs playlist
+      const likedSongsPlaylist = await storage.getUserLikedSongsPlaylist(req.user.id);
+      
+      // Check if song exists in the playlist
+      const playlistWithSongs = await storage.getPlaylistWithSongs(likedSongsPlaylist.id);
+      const isLiked = playlistWithSongs?.songs?.some(song => song.id === songId) || false;
+      
+      res.json({ isLiked });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+
+
+Add proper console logging and look for errors because the above api calls are not working correctly

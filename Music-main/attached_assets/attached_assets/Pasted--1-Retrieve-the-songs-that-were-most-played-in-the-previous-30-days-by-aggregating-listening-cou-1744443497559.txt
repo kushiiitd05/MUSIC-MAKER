@@ -1,0 +1,191 @@
+
+-- 1. Retrieve the songs that were most played in the previous 30 days by aggregating listening counts.
+SELECT 
+    s."SongID",
+    s."Title",
+    SUM(la."Count") AS "TotalPlays"
+FROM "ListeningActivity" la
+JOIN "Song" s ON la."SongID" = s."SongID"
+WHERE la."ActivityDate" >= current_date - interval '30 days'
+  AND la."ActivityDate" < current_date
+GROUP BY s."SongID", s."Title"
+ORDER BY "TotalPlays" DESC;
+
+
+
+-- 2. Calculate each user’s total listening time (based on song duration multiplied by play count) and rank users accordingly.
+SELECT 
+    u."UserID",
+    u."FirstName",
+    u."LastName",
+    SUM(s."Duration" * la."Count") AS "TotalListeningTime",
+    RANK() OVER (ORDER BY SUM(s."Duration" * la."Count") DESC) AS "ListeningRank"
+FROM "ListeningActivity" la
+JOIN "User" u ON la."UserID" = u."UserID"
+JOIN "Song" s ON la."SongID" = s."SongID"
+GROUP BY u."UserID", u."FirstName", u."LastName"
+ORDER BY "ListeningRank";
+
+
+-- 3. List all users who have a premium subscription.
+SELECT *
+FROM "User"
+WHERE "prmuser" = TRUE;
+
+
+-- 4.  Identify the albums with the highest listening count.
+WITH AlbumListenCount AS (
+  SELECT 
+    a."AlbumID",
+    a."Title" AS "AlbumTitle",
+    SUM(la."Count") AS "TotalPlays"
+  FROM "Album" a
+  JOIN "SongAlbum" sa ON a."AlbumID" = sa."AlbumID"
+  JOIN "ListeningActivity" la ON sa."SongID" = la."SongID"
+  GROUP BY a."AlbumID", a."Title"
+),
+MaxPlays AS (
+  SELECT MAX("TotalPlays") AS "MaxTotalPlays"
+  FROM AlbumListenCount
+)
+SELECT 
+  alc."AlbumID",
+  alc."AlbumTitle",
+  alc."TotalPlays"
+FROM AlbumListenCount alc
+JOIN MaxPlays mp ON alc."TotalPlays" = mp."MaxTotalPlays";
+
+
+
+
+-- 5. List all songs in a playlist(example playlist 1) alphabetically
+SELECT s."SongID", s."Title"
+FROM "PlaylistSong" ps
+JOIN "Song" s ON ps."SongID" = s."SongID"
+WHERE ps."PlaylistID" = 1
+ORDER BY s."Title" ASC;
+
+
+
+-- 6. Retrieve Song Details Based on Partial Name(Echoes of Time) based on song name
+SELECT *
+FROM "Song"
+WHERE "Title" ILIKE '%Ec%';
+
+
+-- 7. Most Played Songs per Genre
+WITH GenrePlayCount AS (
+    SELECT 
+        s."Genre",
+        s."Title",
+        SUM(l."Count") AS play_count
+    FROM "Song" s
+    JOIN "ListeningActivity" l ON s."SongID" = l."SongID"
+    GROUP BY s."Genre", s."Title"
+),
+RankedSongs AS (
+    SELECT 
+        *,
+        ROW_NUMBER() OVER (PARTITION BY "Genre" ORDER BY play_count DESC) AS rnk
+    FROM GenrePlayCount
+)
+SELECT "Genre", "Title", play_count
+FROM RankedSongs
+WHERE rnk = 1;
+
+select * from "Follows";
+
+-- 8. Sort genre based on the number of listens
+SELECT s."Genre", SUM(l."Count") AS "TotalListens"
+FROM "ListeningActivity" l
+JOIN "Song" s ON l."SongID" = s."SongID"
+GROUP BY s."Genre"
+ORDER BY "TotalListens" DESC;
+
+
+
+-- 9. Artist with Maximum Increase in Followers in last month
+WITH LastMonthFollows AS (
+  SELECT "ArtistID", COUNT(*) AS "NewFollows"
+  FROM "Follows"
+  WHERE "FollowDate" >= date_trunc('month', current_date - interval '1 month')
+    AND "FollowDate" < date_trunc('month', current_date)
+  GROUP BY "ArtistID"
+)
+SELECT a."ArtistID",
+       a."Name",
+       lmf."NewFollows"
+FROM LastMonthFollows lmf
+JOIN "Artist" a ON lmf."ArtistID" = a."ArtistID"
+ORDER BY lmf."NewFollows" DESC
+LIMIT 1;
+
+
+-- 10. List all songs released in last 6 months
+SELECT 
+    "SongID", 
+    "Title", 
+    "ReleaseDate", 
+    "Genre", 
+    "Language"
+FROM "Song"
+WHERE "ReleaseDate" >= CURRENT_DATE - INTERVAL '6 months'
+ORDER BY "ReleaseDate" DESC;
+
+
+-- 11. Top played songs of each user in last 1 year
+WITH UserSongPlays AS (
+    SELECT 
+        la."UserID",
+        la."SongID",
+        SUM(la."Count") AS total_listens
+    FROM "ListeningActivity" la
+    WHERE la."ActivityDate" >= current_date - interval '1 year'
+    GROUP BY la."UserID", la."SongID"
+),
+RankedUserSongPlays AS (
+    SELECT 
+        usp.*,
+        DENSE_RANK() OVER (  -- Replace ROW_NUMBER() with DENSE_RANK()
+            PARTITION BY usp."UserID" 
+            ORDER BY usp.total_listens DESC
+        ) AS rn
+    FROM UserSongPlays usp
+)
+SELECT 
+    u."UserID", 
+    u."FirstName", 
+    u."LastName", 
+    s."SongID", 
+    s."Title", 
+    rup.total_listens AS "TotalListens"
+FROM RankedUserSongPlays rup
+JOIN "User" u ON rup."UserID" = u."UserID"
+JOIN "Song" s ON rup."SongID" = s."SongID"
+WHERE rup.rn = 1  -- Now returns all tied top songs for a user
+ORDER BY u."UserID", "TotalListens" DESC;
+
+
+-- 12. Calculates total listening time per artist and orders them descending.
+SELECT 
+    a."ArtistID",
+    a."Name",
+    COALESCE(SUM(s."Duration" * la."Count"), 0) AS "TotalListeningTime"
+FROM "Artist" a
+LEFT JOIN "SongArtist" sa ON a."ArtistID" = sa."ArtistID"
+LEFT JOIN "Song" s ON sa."SongID" = s."SongID"
+LEFT JOIN "ListeningActivity" la ON s."SongID" = la."SongID"
+GROUP BY a."ArtistID", a."Name"
+ORDER BY "TotalListeningTime" DESC;
+
+
+-- 13. Top 5 Songs which are part of maximum playlists. Excluding users with no activity
+SELECT 
+    s."SongID", 
+    s."Title", 
+    COUNT(ps."PlaylistID") AS "PlaylistCount"
+FROM "Song" s
+JOIN "PlaylistSong" ps ON s."SongID" = ps."SongID"
+GROUP BY s."SongID", s."Title"
+ORDER BY "PlaylistCount" DESC
+LIMIT 5;
